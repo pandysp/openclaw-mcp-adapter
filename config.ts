@@ -16,7 +16,12 @@ export interface McpAdapterConfig {
 function interpolateEnv(obj: Record<string, string>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [k, v] of Object.entries(obj)) {
-    result[k] = v.replace(/\$\{([^}]+)\}/g, (_, name) => process.env[name] ?? "");
+    result[k] = v.replace(/\$\{([^}]+)\}/g, (_, name) => {
+      if (process.env[name] === undefined) {
+        console.warn(`[mcp-adapter] env var "${name}" is not set`);
+      }
+      return process.env[name] ?? "";
+    });
   }
   return result;
 }

@@ -21,8 +21,14 @@ export class McpClientPool {
 
     // Watch for stdio process exit
     if (transport instanceof StdioClientTransport) {
-      transport.onerror = () => this.markDisconnected(config.name);
-      transport.onclose = () => this.markDisconnected(config.name);
+      transport.onerror = (err) => {
+        console.error(`[mcp-adapter] ${config.name} error:`, err);
+        this.markDisconnected(config.name);
+      };
+      transport.onclose = () => {
+        console.log(`[mcp-adapter] ${config.name} disconnected`);
+        this.markDisconnected(config.name);
+      };
     }
 
     this.clients.set(config.name, { config, client, transport, connected: true });
@@ -38,7 +44,7 @@ export class McpClientPool {
     return new StdioClientTransport({
       command: config.command!,
       args: config.args,
-      env: { ...process.env, ...config.env },
+      env: config.env,
     });
   }
 
@@ -58,7 +64,8 @@ export class McpClientPool {
     } catch (err) {
       if (!entry.connected || this.isConnectionError(err)) {
         await this.reconnect(serverName);
-        const newEntry = this.clients.get(serverName)!;
+        const newEntry = this.clients.get(serverName);
+        if (!newEntry) throw new Error(`Failed to reconnect to ${serverName}`);
         return await newEntry.client.callTool({ name: toolName, arguments: args as Record<string, unknown> });
       }
       throw err;
@@ -69,8 +76,13 @@ export class McpClientPool {
     const entry = this.clients.get(serverName);
     if (!entry) return;
 
-    try { await entry.transport.close?.(); } catch {}
+    console.log(`[mcp-adapter] Reconnecting to ${serverName}...`);
+    try { await entry.transport.close?.(); } catch (err) {
+      console.warn(`[mcp-adapter] ${serverName} close error during reconnect:`, err);
+    }
+    this.clients.delete(serverName);
     await this.connect(entry.config);
+    console.log(`[mcp-adapter] Reconnected to ${serverName}`);
   }
 
   private markDisconnected(serverName: string) {
@@ -80,7 +92,9 @@ export class McpClientPool {
 
   private isConnectionError(err: unknown): boolean {
     const msg = String(err);
-    return msg.includes("closed") || msg.includes("ECONNREFUSED") || msg.includes("EPIPE");
+    return msg.includes("closed") || msg.includes("ECONNREFUSED") || msg.includes("EPIPE")
+      || msg.includes("ETIMEDOUT") || msg.includes("ECONNRESET")
+      || msg.includes("ENOTFOUND") || msg.includes("EHOSTUNREACH");
   }
 
   getStatus(serverName: string) {
