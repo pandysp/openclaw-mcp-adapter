@@ -3,6 +3,7 @@ export interface ServerConfig {
   transport: "stdio" | "http";
   command?: string;
   args?: string[];
+  cwd?: string;
   env?: Record<string, string>;
   url?: string;
   headers?: Record<string, string>;
@@ -75,6 +76,7 @@ export function parseConfig(raw: unknown): McpAdapterConfig {
       transport: transport as "stdio" | "http",
       command: srv.command as string | undefined,
       args: srv.args as string[] | undefined,
+      cwd: srv.cwd as string | undefined,
       env: srv.env ? interpolateEnv(srv.env as Record<string, string>) : undefined,
       url: srv.url as string | undefined,
       headers: srv.headers ? interpolateEnv(srv.headers as Record<string, string>) : undefined,

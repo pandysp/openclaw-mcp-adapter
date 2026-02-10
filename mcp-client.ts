@@ -51,6 +51,7 @@ export class McpClientPool {
     return new StdioClientTransport({
       command: config.command!,
       args: config.args,
+      cwd: config.cwd,
       env: config.env,
     });
   }
