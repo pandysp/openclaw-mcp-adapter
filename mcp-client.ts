@@ -75,13 +75,21 @@ export class McpClientPool {
     this.warnOnSchemaViolations(serverName, toolName, args, entry.toolSchemas);
 
     try {
-      return await entry.client.callTool({ name: toolName, arguments: args as Record<string, unknown> });
+      return await entry.client.callTool(
+        { name: toolName, arguments: args as Record<string, unknown> },
+        undefined,
+        { resetTimeoutOnProgress: true },
+      );
     } catch (err) {
       if (!entry.connected || this.isConnectionError(err)) {
         await this.reconnect(serverName);
         const newEntry = this.clients.get(serverName);
         if (!newEntry) throw new Error(`Failed to reconnect to ${serverName}`);
-        return await newEntry.client.callTool({ name: toolName, arguments: args as Record<string, unknown> });
+        return await newEntry.client.callTool(
+          { name: toolName, arguments: args as Record<string, unknown> },
+          undefined,
+          { resetTimeoutOnProgress: true },
+        );
       }
       throw err;
     }
