@@ -78,7 +78,7 @@ export class McpClientPool {
       return await entry.client.callTool(
         { name: toolName, arguments: args as Record<string, unknown> },
         undefined,
-        { resetTimeoutOnProgress: true },
+        { resetTimeoutOnProgress: true, onprogress: () => {} },
       );
     } catch (err) {
       if (!entry.connected || this.isConnectionError(err)) {
@@ -88,7 +88,7 @@ export class McpClientPool {
         return await newEntry.client.callTool(
           { name: toolName, arguments: args as Record<string, unknown> },
           undefined,
-          { resetTimeoutOnProgress: true },
+          { resetTimeoutOnProgress: true, onprogress: () => {} },
         );
       }
       throw err;
