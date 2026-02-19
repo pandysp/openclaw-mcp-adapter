@@ -19,7 +19,7 @@ openclaw plugins install mcp-adapter
 **Alternative: install from source**
 
 ```bash
-git clone https://github.com/androidStern/openclaw-mcp-adapter.git
+git clone https://github.com/pandysp/openclaw-mcp-adapter.git
 openclaw plugins install ./openclaw-mcp-adapter
 ```
 

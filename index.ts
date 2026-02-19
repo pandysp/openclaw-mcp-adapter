@@ -82,8 +82,9 @@ export default function (api: any) {
               await pool.listTools(server.name);
             }
             const result = await pool.callTool(server.name, tool.name, params);
-            const text = result.content
-              ?.map((c: any) => c.text ?? c.data ?? "")
+            const content = result.content as Array<{ text?: string; data?: string }>;
+            const text = content
+              ?.map((c) => c.text ?? c.data ?? "")
               .join("\n") ?? "";
             return {
               content: [{ type: "text", text }],
@@ -131,8 +132,9 @@ export default function (api: any) {
                 parameters: tool.inputSchema ?? { type: "object", properties: {} },
                 async execute(_id: string, params: unknown) {
                   const result = await pool.callTool(server.name, tool.name, params);
-                  const text = result.content
-                    ?.map((c: any) => c.text ?? c.data ?? "")
+                  const content = result.content as Array<{ text?: string; data?: string }>;
+                  const text = content
+                    ?.map((c) => c.text ?? c.data ?? "")
                     .join("\n") ?? "";
                   return {
                     content: [{ type: "text", text }],

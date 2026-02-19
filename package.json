@@ -3,33 +3,59 @@
   "version": "0.1.2",
   "type": "module",
   "description": "OpenClaw plugin that exposes MCP server tools as native agent tools",
+  "author": "Andreas Spannagel",
+  "license": "MIT",
   "keywords": [
     "openclaw",
     "openclaw-plugin",
     "mcp",
     "model-context-protocol"
   ],
-  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pandysp/openclaw-mcp-adapter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pandysp/openclaw-mcp-adapter/issues"
+  },
+  "homepage": "https://github.com/pandysp/openclaw-mcp-adapter#readme",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "openclaw": {
     "extensions": [
       "./index.ts"
     ]
   },
   "files": [
+    "dist/",
     "index.ts",
     "mcp-client.ts",
     "config.ts",
     "openclaw.plugin.json",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/androidStern/openclaw-mcp-adapter"
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
   }
 }
