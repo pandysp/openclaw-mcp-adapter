@@ -1,6 +1,6 @@
 {
   "name": "@pandysp/openclaw-mcp-adapter",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "description": "OpenClaw plugin that exposes MCP server tools as native agent tools",
   "author": "Andreas Spannagel",
