@@ -74,21 +74,26 @@ export class McpClientPool {
 
     this.warnOnSchemaViolations(serverName, toolName, args, entry.toolSchemas);
 
+    const reqOpts: Record<string, unknown> = { resetTimeoutOnProgress: true, onprogress: () => {} };
+    if (entry.config.timeout) reqOpts.timeout = entry.config.timeout;
+
     try {
       return await entry.client.callTool(
         { name: toolName, arguments: args as Record<string, unknown> },
         undefined,
-        { resetTimeoutOnProgress: true, onprogress: () => {} },
+        reqOpts,
       );
     } catch (err) {
       if (!entry.connected || this.isConnectionError(err)) {
         await this.reconnect(serverName);
         const newEntry = this.clients.get(serverName);
         if (!newEntry) throw new Error(`Failed to reconnect to ${serverName}`);
+        const retryOpts: Record<string, unknown> = { resetTimeoutOnProgress: true, onprogress: () => {} };
+        if (newEntry.config.timeout) retryOpts.timeout = newEntry.config.timeout;
         return await newEntry.client.callTool(
           { name: toolName, arguments: args as Record<string, unknown> },
           undefined,
-          { resetTimeoutOnProgress: true, onprogress: () => {} },
+          retryOpts,
         );
       }
       throw err;

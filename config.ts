@@ -8,6 +8,8 @@ export interface ServerConfig {
   url?: string;
   headers?: Record<string, string>;
   allowPrivateUrls?: boolean;
+  /** Tool call timeout in milliseconds (default: 60000). */
+  timeout?: number;
 }
 
 export interface McpAdapterConfig {
@@ -81,6 +83,7 @@ export function parseConfig(raw: unknown): McpAdapterConfig {
       url: srv.url as string | undefined,
       headers: srv.headers ? interpolateEnv(srv.headers as Record<string, string>) : undefined,
       allowPrivateUrls: allowPrivate,
+      timeout: typeof srv.timeout === "number" ? srv.timeout : undefined,
     });
   }
 
