@@ -2,6 +2,9 @@
   "id": "openclaw-mcp-adapter",
   "name": "MCP Adapter",
   "description": "Exposes MCP server tools as native OpenClaw agent tools",
+  "contracts": {
+    "tools": []
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

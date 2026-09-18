@@ -14,32 +14,67 @@ interface ClientEntry {
   client: Client;
   transport: StdioClientTransport | StreamableHTTPClientTransport;
   connected: boolean;
+  closed: Promise<void>;
   toolSchemas: Map<string, ToolSchema>;
 }
 
 export class McpClientPool {
   private clients = new Map<string, ClientEntry>();
+  private connecting = new Map<string, Promise<Client>>();
 
   async connect(config: ServerConfig): Promise<Client> {
+    const pending = this.connecting.get(config.name);
+    if (pending) return pending;
+    const current = this.clients.get(config.name);
+    if (current?.connected) return current.client;
+
+    const opening = this.open(config);
+    this.connecting.set(config.name, opening);
+    try {
+      return await opening;
+    } finally {
+      this.connecting.delete(config.name);
+    }
+  }
+
+  private async open(config: ServerConfig): Promise<Client> {
+    const previous = this.clients.get(config.name);
+    if (previous) await this.closeEntry(config.name, previous);
+
     const client = new Client({ name: "openclaw-mcp-adapter", version: "0.1.0" });
     const transport = this.createTransport(config);
-
-    await client.connect(transport);
-
-    // Watch for stdio process exit
     if (transport instanceof StdioClientTransport) {
-      transport.onerror = (err) => {
-        console.error(`[mcp-adapter] ${config.name} error:`, err);
-        this.markDisconnected(config.name);
-      };
-      transport.onclose = () => {
-        console.log(`[mcp-adapter] ${config.name} disconnected`);
-        this.markDisconnected(config.name);
-      };
+      // Server stderr can contain credentials. Drain it without forwarding raw
+      // data; connection/request errors still propagate through the SDK.
+      transport.stderr?.once("data", () => console.error(`[mcp-adapter] ${config.name} emitted diagnostic output (withheld)`));
+      transport.stderr?.on("data", () => {});
     }
+    let resolveClosed!: () => void;
+    const closed = new Promise<void>((resolve) => { resolveClosed = resolve; });
+    const entry: ClientEntry = { config, client, transport, connected: false, closed, toolSchemas: new Map() };
+    this.clients.set(config.name, entry);
 
-    this.clients.set(config.name, { config, client, transport, connected: true, toolSchemas: new Map() });
-    return client;
+    // Use client callbacks: replacing transport.onclose bypasses the SDK's
+    // rejection of pending requests when a server disconnects.
+    client.onclose = () => {
+      entry.connected = false;
+      resolveClosed();
+    };
+    client.onerror = () => {
+      console.error(`[mcp-adapter] ${config.name} transport error`);
+    };
+    try {
+      await client.connect(transport);
+      entry.connected = true;
+      return client;
+    } catch (err) {
+      try {
+        await this.closeEntry(config.name, entry);
+      } catch (closeError) {
+        throw new AggregateError([err, closeError], `MCP server ${config.name} failed to connect and close`);
+      }
+      throw err;
+    }
   }
 
   private createTransport(config: ServerConfig) {
@@ -53,19 +88,32 @@ export class McpClientPool {
       args: config.args,
       cwd: config.cwd,
       env: config.env,
+      stderr: "pipe",
     });
   }
 
   async listTools(serverName: string) {
     const entry = this.clients.get(serverName);
     if (!entry) throw new Error(`Unknown server: ${serverName}`);
-    const result = await entry.client.listTools();
-    for (const tool of result.tools) {
+    const tools: Awaited<ReturnType<Client["listTools"]>>["tools"] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await entry.client.listTools(cursor === undefined ? undefined : { cursor });
+      tools.push(...page.tools);
+      cursor = page.nextCursor;
+      if (cursor !== undefined) {
+        if (cursors.has(cursor)) throw new Error(`MCP server ${serverName} repeated a tool-list cursor`);
+        cursors.add(cursor);
+      }
+    } while (cursor !== undefined);
+    entry.toolSchemas.clear();
+    for (const tool of tools) {
       if (tool.inputSchema) {
         entry.toolSchemas.set(tool.name, tool.inputSchema as ToolSchema);
       }
     }
-    return result.tools;
+    return tools;
   }
 
   async callTool(serverName: string, toolName: string, args: unknown) {
@@ -77,45 +125,13 @@ export class McpClientPool {
     const reqOpts: Record<string, unknown> = { resetTimeoutOnProgress: true, onprogress: () => {} };
     if (entry.config.timeout) reqOpts.timeout = entry.config.timeout;
 
-    try {
-      return await entry.client.callTool(
-        { name: toolName, arguments: args as Record<string, unknown> },
-        undefined,
-        reqOpts,
-      );
-    } catch (err) {
-      if (!entry.connected || this.isConnectionError(err)) {
-        await this.reconnect(serverName);
-        const newEntry = this.clients.get(serverName);
-        if (!newEntry) throw new Error(`Failed to reconnect to ${serverName}`);
-        const retryOpts: Record<string, unknown> = { resetTimeoutOnProgress: true, onprogress: () => {} };
-        if (newEntry.config.timeout) retryOpts.timeout = newEntry.config.timeout;
-        return await newEntry.client.callTool(
-          { name: toolName, arguments: args as Record<string, unknown> },
-          undefined,
-          retryOpts,
-        );
-      }
-      throw err;
-    }
-  }
-
-  private async reconnect(serverName: string) {
-    const entry = this.clients.get(serverName);
-    if (!entry) return;
-
-    console.log(`[mcp-adapter] Reconnecting to ${serverName}...`);
-    try { await entry.transport.close?.(); } catch (err) {
-      console.warn(`[mcp-adapter] ${serverName} close error during reconnect:`, err);
-    }
-    this.clients.delete(serverName);
-    await this.connect(entry.config);
-    console.log(`[mcp-adapter] Reconnected to ${serverName}`);
-  }
-
-  private markDisconnected(serverName: string) {
-    const entry = this.clients.get(serverName);
-    if (entry) entry.connected = false;
+    // A lost response does not mean the tool failed to execute. Never replay
+    // an ambiguous call; a later, explicit invocation may reconnect instead.
+    return await entry.client.callTool(
+      { name: toolName, arguments: args as Record<string, unknown> },
+      undefined,
+      reqOpts,
+    );
   }
 
   private warnOnSchemaViolations(
@@ -148,33 +164,40 @@ export class McpClientPool {
     }
   }
 
-  private isConnectionError(err: unknown): boolean {
-    const msg = String(err);
-    return msg.includes("closed") || msg.includes("ECONNREFUSED") || msg.includes("EPIPE")
-      || msg.includes("ETIMEDOUT") || msg.includes("ECONNRESET")
-      || msg.includes("ENOTFOUND") || msg.includes("EHOSTUNREACH");
-  }
-
   getStatus(serverName: string) {
     const entry = this.clients.get(serverName);
     return { connected: entry?.connected ?? false };
   }
 
-  async close(serverName: string) {
-    const entry = this.clients.get(serverName);
-    if (!entry) return;
-
-    try {
-      await entry.transport.close?.();
-    } catch {
-      // Ignore close errors
+  private async closeEntry(serverName: string, entry: ClientEntry) {
+    const pid = entry.transport instanceof StdioClientTransport ? entry.transport.pid : null;
+    await entry.transport.close();
+    if (pid !== null) {
+      // SDK close() can return immediately after SIGKILL. Wait for its actual
+      // close event before reporting that the owned subprocess has stopped.
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`MCP server ${serverName} did not close`)), 1000);
+        timer.unref();
+        entry.closed.then(() => { clearTimeout(timer); resolve(); });
+      });
     }
-    this.clients.delete(serverName);
+    entry.connected = false;
+    if (this.clients.get(serverName) === entry) this.clients.delete(serverName);
+  }
+
+  async close(serverName: string) {
+    const pending = this.connecting.get(serverName);
+    if (pending) await pending;
+    const entry = this.clients.get(serverName);
+    if (entry) await this.closeEntry(serverName, entry);
   }
 
   async closeAll() {
-    for (const name of this.clients.keys()) {
-      await this.close(name);
-    }
+    const pending = await Promise.allSettled(this.connecting.values());
+    const closing = await Promise.allSettled(
+      [...this.clients].map(([name, entry]) => this.closeEntry(name, entry)),
+    );
+    const failures = [...pending, ...closing].filter((result) => result.status === "rejected");
+    if (failures.length > 0) throw new AggregateError(failures.map((result) => result.reason), "MCP connections failed to close");
   }
 }

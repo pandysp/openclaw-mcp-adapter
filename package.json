@@ -1,6 +1,6 @@
 {
   "name": "@pandysp/openclaw-mcp-adapter",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "OpenClaw plugin that exposes MCP server tools as native agent tools",
   "author": "Andreas Spannagel",
@@ -20,6 +20,9 @@
   },
   "homepage": "https://github.com/pandysp/openclaw-mcp-adapter#readme",
   "main": "dist/index.js",
+  "bin": {
+    "openclaw-mcp-prepare": "dist/prepare.js"
+  },
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
@@ -37,11 +40,14 @@
     "index.ts",
     "mcp-client.ts",
     "config.ts",
+    "prepared-cache.ts",
+    "prepare.ts",
     "openclaw.plugin.json",
     "README.md"
   ],
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test scripts/*.test.mjs",
     "clean": "rm -rf dist *.tsbuildinfo",
     "prepublishOnly": "npm run clean && npm run build"
   },

@@ -48,9 +48,9 @@ function interpolateEnv(obj: Record<string, string>): Record<string, string> {
   for (const [k, v] of Object.entries(obj)) {
     result[k] = v.replace(/\$\{([^}]+)\}/g, (_, name) => {
       if (process.env[name] === undefined) {
-        console.warn(`[mcp-adapter] env var "${name}" is not set`);
+        throw new Error(`MCP environment variable "${name}" is not set`);
       }
-      return process.env[name] ?? "";
+      return process.env[name]!;
     });
   }
   return result;
@@ -59,12 +59,15 @@ function interpolateEnv(obj: Record<string, string>): Record<string, string> {
 export function parseConfig(raw: unknown): McpAdapterConfig {
   const cfg = (raw ?? {}) as Record<string, unknown>;
   const servers: ServerConfig[] = [];
+  if (cfg.servers !== undefined && !Array.isArray(cfg.servers)) throw new Error("MCP servers must be an array");
+  if (cfg.toolPrefix !== undefined && typeof cfg.toolPrefix !== "boolean") throw new Error("MCP toolPrefix must be a boolean");
 
   for (const s of (cfg.servers as unknown[]) ?? []) {
     const srv = s as Record<string, unknown>;
-    if (!srv.name) throw new Error("Server missing 'name'");
+    if (typeof srv.name !== "string" || !srv.name) throw new Error("Server missing a string 'name'");
 
     const transport = (srv.transport as string) ?? "stdio";
+    if (transport !== "stdio" && transport !== "http") throw new Error(`Server "${srv.name}" has an unsupported transport`);
     if (transport === "stdio" && !srv.command) throw new Error(`Server "${srv.name}" missing 'command'`);
     if (transport === "http" && !srv.url) throw new Error(`Server "${srv.name}" missing 'url'`);
 
